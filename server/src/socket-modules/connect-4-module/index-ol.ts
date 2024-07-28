@@ -1,18 +1,9 @@
 import { Server, Socket } from 'socket.io';
-import { connect4Board, randomID } from '../utils';
+import { connect4Board, randomID } from '../../utils';
+import { IConnect4Game } from '../../common/types'
 
-// Define types for the game
-interface Game {
-    players: string[];
-    board: (string | null)[][];
-    currentPlayer: string;
-    gameId: string;
-    isManual: boolean;
-    invitedPlayers?: string[];
-}
-
-class GameConnect4Manager {
-    private games: { [key: string]: Game } = {};
+class Connect4Module {
+    private games: { [key: string]: IConnect4Game } = {};
     private waitingPlayers: string[] = [];
     private gameCreationRequests: { [key: string]: string } = {}; // { playerId: gameId }
     private io: Server;
@@ -31,6 +22,7 @@ class GameConnect4Manager {
                 console.log(`Rejoin game request from ${socket.id}, gameId: ${gameId}`);
                 this.rejoinGame(socket, gameId);
             });
+
 
             // Create a new game
             socket.on('createGame', (manual: boolean = false) => {
@@ -94,7 +86,7 @@ class GameConnect4Manager {
 
     private createGame(socket: Socket, manual: boolean) {
         const gameId = randomID();
-        const game: Game = {
+        const game: IConnect4Game = {
             players: [socket.id],
             board: connect4Board(),
             currentPlayer: socket.id,
@@ -119,8 +111,6 @@ class GameConnect4Manager {
                 socket.emit('waitingForOpponent');
             }
         }
-
-        console.log(`Game created with ID ${gameId}`, game);
     }
 
     private joinGame(socket: Socket, gameId: string | null) {
@@ -146,7 +136,6 @@ class GameConnect4Manager {
                 this.waitingPlayers.push(socket.id);
                 socket.emit('waitingToJoinGame');
             }
-            console.log({ availableGame }, socket.id,);
         }
     }
 
@@ -247,7 +236,13 @@ class GameConnect4Manager {
             if (row !== -1) {
                 board[row][column] = socket.id;
                 game.currentPlayer = game.players.find(p => p !== socket.id) || '';
-                this.io.in(gameId).emit('moveMade', { board, currentPlayer: game.currentPlayer });
+                this.io.in(gameId).emit('moveMade', game);
+
+                // Check for a win
+                const winningCells = this.checkWin(board, row, column, socket.id);
+                if (winningCells) {
+                    this.io.in(gameId).emit('gameWon', { winner: socket.id, winningCells, game });
+                }
             } else {
                 socket.emit('error', 'Column is full');
             }
@@ -256,13 +251,48 @@ class GameConnect4Manager {
         }
     }
 
-    private getAvailableRow(board: (string | null)[][], column: number): number {
+    private getAvailableRow(board: IConnect4Game['board'], column: number): number {
         for (let row = board.length - 1; row >= 0; row--) {
             if (!board[row][column]) {
                 return row;
             }
         }
         return -1;
+    }
+
+    private checkWin(board: (string | null)[][], row: number, column: number, playerId: string): { row: number, col: number }[] | null {
+        const directions = [
+            { row: 0, col: 1 },  // Horizontal
+            { row: 1, col: 0 },  // Vertical
+            { row: 1, col: 1 },  // Diagonal down-right
+            { row: 1, col: -1 }  // Diagonal down-left
+        ];
+
+        for (const { row: dRow, col: dCol } of directions) {
+            const line = [{ row, col: column }];
+            for (let i = 1; i < 4; i++) {
+                const r = row + dRow * i;
+                const c = column + dCol * i;
+                if (r >= 0 && r < board.length && c >= 0 && c < board[0].length && board[r][c] === playerId) {
+                    line.push({ row: r, col: c });
+                } else {
+                    break;
+                }
+            }
+            for (let i = 1; i < 4; i++) {
+                const r = row - dRow * i;
+                const c = column - dCol * i;
+                if (r >= 0 && r < board.length && c >= 0 && c < board[0].length && board[r][c] === playerId) {
+                    line.push({ row: r, col: c });
+                } else {
+                    break;
+                }
+            }
+            if (line.length >= 4) {
+                return line;
+            }
+        }
+        return null;
     }
 
     private handleDisconnect(socket: Socket) {
@@ -287,4 +317,4 @@ class GameConnect4Manager {
     }
 }
 
-export { GameConnect4Manager };
+export { Connect4Module };

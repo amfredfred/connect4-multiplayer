@@ -13,12 +13,12 @@
 import { computed } from 'vue';
 import { useConnet4GameSocket } from './useConnet4GameSocket';
 
-const { socket, game } = useConnet4GameSocket();
+const { socket, session } = useConnet4GameSocket();
 const status = computed(() => {
-    if (game.value.currentPlayer === socket.id) {
+    if (session.value?.currentPlayer === socket.id) {
         return 'Your turn!';
     }
-    return `Waiting for ${game.value.currentPlayer.slice(0, 10)} to move...`;
+    return `Waiting for ${session.value?.currentPlayer.slice(0, 10)} to move...`;
 });
 
 const error = computed(() => {
